@@ -85,6 +85,10 @@ final class RunViewModel: ObservableObject {
 
     private(set) var runSeed: UInt64
     private var unitIndex: [String: UnitArchetype]
+    private let mapGraph: MapGraph
+    private var completedNodeIDs: Set<UUID> = []
+    private var allowedNodeIDs: Set<UUID>
+    private var currentColumnIndex: Int = 0
 
     init(
         catalog: ContentCatalog = ContentCatalogFactory.makeVerticalSliceCatalog(),
@@ -93,21 +97,17 @@ final class RunViewModel: ObservableObject {
         self.catalog = catalog
         self.runSeed = runSeed
         self.unitIndex = Dictionary(uniqueKeysWithValues: catalog.units.map { ($0.key, $0) })
-        self.nodes = [
-            RunNode(kind: .battle),
-            RunNode(kind: .battle, isLocked: true),
-            RunNode(kind: .boss, isLocked: true)
-        ]
+        self.mapGraph = catalog.makeMapGraph(runSeed: runSeed)
+        let startIDs = Set(mapGraph.nodes(in: 0).map(\MapNode.id))
+        self.allowedNodeIDs = startIDs
+        self.nodes = Self.makeRunNodes(for: 0,
+                                       in: mapGraph,
+                                       allowed: startIDs,
+                                       completed: completedNodeIDs)
     }
 
     func startPrep(for node: RunNode) {
-        guard let index = nodes.firstIndex(of: node), !nodes[index].isCompleted else { return }
-        var updated = nodes
-        updated[index].isLocked = false
-        if index + 1 < updated.count {
-            updated[index + 1].isLocked = false
-        }
-        nodes = updated
+        guard !node.isCompleted, allowedNodeIDs.contains(node.id) else { return }
 
         let deck = makeDeck()
         let costByKey = Dictionary(uniqueKeysWithValues: deck.map { ($0.archetype.key, $0.cost) })
@@ -175,9 +175,10 @@ final class RunViewModel: ObservableObject {
         )
 
         let node = state.node
+        let column = mapGraph.node(with: node.id)?.column ?? currentColumnIndex
         let seed = SeedFactory.encounterSeed(
             runSeed: runSeed,
-            floor: nodes.firstIndex(of: node) ?? 0,
+            floor: column,
             nodeID: node.id
         )
 
@@ -190,13 +191,31 @@ final class RunViewModel: ObservableObject {
     func resolvePendingEncounter() {
         guard let encounter else { return }
         let outcome = lastOutcome ?? .defeat
-        if let index = nodes.firstIndex(of: encounter.node) {
-            var updated = nodes
-            updated[index].isCompleted = true
-            if index + 1 < updated.count {
-                updated[index + 1].isLocked = false
+        if outcome == .victory {
+            completedNodeIDs.insert(encounter.node.id)
+            if let mapNode = mapGraph.node(with: encounter.node.id) {
+                let nextColumn = mapNode.column + 1
+                if nextColumn < mapGraph.columns {
+                    let outgoing = Set(mapGraph.outgoingIDs(for: mapNode.id))
+                    allowedNodeIDs = outgoing.isEmpty
+                        ? Set(mapGraph.nodes(in: nextColumn).map(\MapNode.id))
+                        : outgoing
+                    currentColumnIndex = nextColumn
+                    nodes = Self.makeRunNodes(for: nextColumn,
+                                              in: mapGraph,
+                                              allowed: allowedNodeIDs,
+                                              completed: completedNodeIDs)
+                } else {
+                    nodes = []
+                }
             }
-            nodes = updated
+        } else {
+            // defeat → keep same column, allow reattempt of selected node
+            allowedNodeIDs = [encounter.node.id]
+            nodes = Self.makeRunNodes(for: currentColumnIndex,
+                                      in: mapGraph,
+                                      allowed: allowedNodeIDs,
+                                      completed: completedNodeIDs)
         }
         activeEncounter = nil
         lastOutcome = outcome
@@ -233,6 +252,30 @@ final class RunViewModel: ObservableObject {
         let playerPyre = Pyre(team: .player, hp: 200, attack: 8, attackIntervalTicks: 72)
         let enemyPyre = Pyre(team: .enemy, hp: 200, attack: 8, attackIntervalTicks: 72)
         return (enemyPlacements, playerPyre, enemyPyre)
+    }
+
+    private static func makeRunNodes(for column: Int,
+                                     in graph: MapGraph,
+                                     allowed: Set<UUID>,
+                                     completed: Set<UUID>) -> [RunNode] {
+        graph.nodes(in: column).map { mapNode in
+            let kind = mapRunKind(for: mapNode.kind)
+            return RunNode(id: mapNode.id,
+                           kind: kind,
+                           isCompleted: completed.contains(mapNode.id),
+                           isLocked: !allowed.contains(mapNode.id))
+        }
+    }
+
+    private static func mapRunKind(for type: BattleNodeType) -> RunNode.Kind {
+        switch type {
+        case .battle: return .battle
+        case .elite: return .elite
+        case .event: return .event
+        case .shop: return .shop
+        case .treasure: return .treasure
+        case .boss: return .boss
+        }
     }
 
     private func makeDeck() -> [PrepCard] {

@@ -27,7 +27,7 @@ public enum Role: UInt8, Codable, Sendable {
     case buffer
 }
 
-public enum Stance: UInt8, Codable, Sendable {
+public enum Stance: UInt8, Codable, Sendable, CaseIterable {
     case `guard`
     case skirmish
     case hunter

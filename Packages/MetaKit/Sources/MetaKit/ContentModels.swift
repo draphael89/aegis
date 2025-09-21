@@ -125,6 +125,10 @@ public struct ContentCatalog: Sendable {
         }
         return ContentDatabase(units: units, spells: spellArchetypes)
     }
+
+    public func makeMapGraph(runSeed: UInt64) -> MapGraph {
+        MapDefinitions.generateMap(using: mapWeights, seed: runSeed)
+    }
 }
 
 private extension SpellDefinition.Effect {

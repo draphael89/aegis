@@ -5,6 +5,7 @@ import MetaKit
 import SpriteKit
 import SwiftUI
 
+@MainActor
 final class BattleSceneCoordinator: NSObject, ObservableObject, BattleSceneDelegate {
     @Published var outcome: BattleOutcome?
     weak var runViewModel: RunViewModel?
