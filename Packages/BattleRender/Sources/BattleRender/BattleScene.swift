@@ -25,10 +25,20 @@ public final class BattleScene: SKScene {
     private var unitNodes: [UnitID: UnitNode] = [:]
     private let unitPool: NodePool<UnitNode>
     private let hitPool: NodePool<SKShapeNode>
+    private let damagePool: NodePool<SKLabelNode>
+    private var activeDamageNodes: [SKLabelNode] = []
+    private let maxDamageNodes = 16
     private let laneBandNodes: [SKShapeNode]
     private let energyLabel = SKLabelNode(fontNamed: "Menlo")
     private let cameraNode = SKCameraNode()
     private var introSweepCompleted = false
+    private var cameraRestPosition: CGPoint
+    private var hitstopTimer: TimeInterval = 0
+    private var shakeTimer: TimeInterval = 0
+    private var shakeDuration: TimeInterval = 0
+    private var shakeAmplitude: CGFloat = 0
+    private var lastPlayerPyreHP: Int?
+    private var lastEnemyPyreHP: Int?
 
     public init(configuration: BattleSceneConfiguration = BattleSceneConfiguration()) {
         self.configuration = configuration
@@ -51,6 +61,20 @@ public final class BattleScene: SKScene {
             node.alpha = 0.9
             node.setScale(1.0)
         })
+        self.damagePool = NodePool<SKLabelNode>(factory: {
+            let label = SKLabelNode(fontNamed: "Menlo-Bold")
+            label.fontSize = 12
+            label.fontColor = .white
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            label.zPosition = 70
+            label.isAntialiased = false
+            return label
+        }, reset: { label in
+            label.removeAllActions()
+            label.alpha = 1.0
+            label.text = nil
+        })
         var bands: [SKShapeNode] = []
         for lane in Lane.allCases {
             let rect = placementGrid.bandRect(for: lane)
@@ -62,7 +86,7 @@ public final class BattleScene: SKScene {
         }
         self.laneBandNodes = bands
         super.init(size: configuration.canvasSize)
-        scaleMode = .resizeFill
+        scaleMode = .aspectFit
         backgroundColor = SKColor.black
         energyLabel.fontSize = 12
         energyLabel.fontColor = .white
@@ -74,7 +98,8 @@ public final class BattleScene: SKScene {
         )
         energyLabel.zPosition = 50
         camera = cameraNode
-        cameraNode.position = CGPoint(x: configuration.canvasSize.width / 2, y: configuration.canvasSize.height / 2)
+        cameraRestPosition = CGPoint(x: configuration.canvasSize.width / 2, y: configuration.canvasSize.height / 2)
+        cameraNode.position = cameraRestPosition
         addChild(cameraNode)
         cameraNode.addChild(energyLabel)
         for node in laneBandNodes {
@@ -99,6 +124,12 @@ public final class BattleScene: SKScene {
         accumulator = 0
         previousTime = 0
         introSweepCompleted = false
+        hitstopTimer = 0
+        shakeTimer = 0
+        shakeDuration = 0
+        shakeAmplitude = 0
+        lastPlayerPyreHP = simulation?.state.playerPyre.hp
+        lastEnemyPyreHP = simulation?.state.enemyPyre.hp
         runIntroCameraSweep()
     }
 
@@ -117,10 +148,17 @@ public final class BattleScene: SKScene {
         previousTime = currentTime
         accumulator += delta
         while accumulator >= fixedDelta {
+            if hitstopTimer > 0 {
+                hitstopTimer = max(0, hitstopTimer - fixedDelta)
+                accumulator -= fixedDelta
+                continue
+            }
             simulation.step()
+            checkPyreDamage(in: simulation)
             accumulator -= fixedDelta
         }
         syncNodes(with: simulation)
+        updateCameraShake(delta: delta)
         if simulation.state.outcome != .inProgress {
             battleDelegate?.battleScene(self, didFinish: simulation.state.outcome)
         }
@@ -155,9 +193,19 @@ public final class BattleScene: SKScene {
             if let node = unitNodes[id] {
                 let position = placementGrid.position(for: unit.lane, slot: unit.slot, xTile: unit.xTile)
                 node.position = position
-                node.configure(with: unit, archetype: archetype)
-                if let previousHP = lastKnownHP[id], unit.hp < previousHP {
-                    runHitFeedback(on: node, magnitude: previousHP - unit.hp)
+                if let previousHP = lastKnownHP[id] {
+                    if unit.hp != previousHP {
+                        node.updateHealth(current: unit.hp, max: archetype.maxHP)
+                        let delta = unit.hp - previousHP
+                        if delta < 0 {
+                            runHitFeedback(on: node, magnitude: previousHP - unit.hp)
+                            spawnDamageNumber(amount: -delta, isHeal: false, at: position)
+                        } else if delta > 0 {
+                            spawnDamageNumber(amount: delta, isHeal: true, at: position)
+                        }
+                    }
+                } else {
+                    node.configure(with: unit, archetype: archetype)
                 }
             } else {
                 let node = unitPool.acquire()
@@ -174,6 +222,8 @@ public final class BattleScene: SKScene {
         let deadUnits = unitNodes.keys.filter { !seen.contains($0) }
         for id in deadUnits {
             if let node = unitNodes[id] {
+                triggerHitstop(duration: 0.08)
+                triggerCameraShake(amplitude: 4, duration: 0.12)
                 unitPool.release(node)
             }
             unitNodes.removeValue(forKey: id)
@@ -183,15 +233,20 @@ public final class BattleScene: SKScene {
 
     private func runIntroCameraSweep() {
         guard !introSweepCompleted else { return }
-        introSweepCompleted = true
         let top = CGPoint(x: size.width / 2.0, y: size.height * 0.9)
         let mid = CGPoint(x: size.width / 2.0, y: size.height * 0.55)
         let bottom = CGPoint(x: size.width / 2.0, y: size.height * 0.35)
+        cameraRestPosition = bottom
         cameraNode.position = top
         let sweep = SKAction.sequence([
             SKAction.move(to: mid, duration: 0.6).withEaseInOut(),
             SKAction.wait(forDuration: 0.2),
-            SKAction.move(to: bottom, duration: 0.6).withEaseInOut()
+            SKAction.move(to: bottom, duration: 0.6).withEaseInOut(),
+            SKAction.run { [weak self] in
+                guard let self else { return }
+                self.introSweepCompleted = true
+                self.cameraNode.position = bottom
+            }
         ])
         cameraNode.run(sweep)
     }
@@ -231,6 +286,76 @@ public final class BattleScene: SKScene {
             }
         ])
         effect.run(action)
+    }
+
+    private func spawnDamageNumber(amount: Int, isHeal: Bool, at position: CGPoint) {
+        guard amount > 0 else { return }
+        if activeDamageNodes.count >= maxDamageNodes {
+            if let node = activeDamageNodes.first {
+                damagePool.release(node)
+            }
+            if !activeDamageNodes.isEmpty {
+                activeDamageNodes.removeFirst()
+            }
+        }
+        let label = damagePool.acquire()
+        label.text = isHeal ? "+\(amount)" : "-\(amount)"
+        label.fontColor = isHeal ? .green : .red
+        label.position = position
+        label.alpha = 1.0
+        addChild(label)
+        activeDamageNodes.append(label)
+
+        let rise = SKAction.moveBy(x: 0, y: 16, duration: 0.4)
+        let fade = SKAction.fadeOut(withDuration: 0.4)
+        let group = SKAction.group([rise, fade])
+        let cleanup = SKAction.run { [weak self, weak label] in
+            guard let self, let label else { return }
+            self.damagePool.release(label)
+            self.activeDamageNodes.removeAll { $0 === label }
+        }
+        label.run(SKAction.sequence([group, cleanup]))
+    }
+
+    private func triggerHitstop(duration: TimeInterval) {
+        hitstopTimer = max(hitstopTimer, duration)
+    }
+
+    private func triggerCameraShake(amplitude: CGFloat, duration: TimeInterval) {
+        shakeAmplitude = max(shakeAmplitude, amplitude)
+        shakeDuration = max(shakeDuration, duration)
+        shakeTimer = max(shakeTimer, duration)
+    }
+
+    private func updateCameraShake(delta: TimeInterval) {
+        guard introSweepCompleted else { return }
+        if shakeTimer > 0 {
+            shakeTimer = max(0, shakeTimer - delta)
+            let progress = shakeDuration > 0 ? CGFloat(shakeTimer / shakeDuration) : 0
+            let damped = progress * progress
+            let offsetX = (CGFloat.random(in: -1...1)) * shakeAmplitude * damped
+            let offsetY = (CGFloat.random(in: -1...1)) * shakeAmplitude * damped
+            cameraNode.position = cameraRestPosition + CGPoint(x: offsetX, y: offsetY)
+        } else {
+            cameraNode.position = cameraRestPosition
+            shakeAmplitude = 0
+            shakeDuration = 0
+        }
+    }
+
+    private func checkPyreDamage(in simulation: BattleSimulation) {
+        let playerHP = simulation.state.playerPyre.hp
+        let enemyHP = simulation.state.enemyPyre.hp
+        if let last = lastPlayerPyreHP, playerHP < last {
+            triggerHitstop(duration: 0.05)
+            triggerCameraShake(amplitude: 3, duration: 0.1)
+        }
+        if let last = lastEnemyPyreHP, enemyHP < last {
+            triggerHitstop(duration: 0.05)
+            triggerCameraShake(amplitude: 3, duration: 0.1)
+        }
+        lastPlayerPyreHP = playerHP
+        lastEnemyPyreHP = enemyHP
     }
 }
 

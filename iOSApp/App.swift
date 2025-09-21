@@ -17,6 +17,7 @@ struct AegisApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var run: RunViewModel
+    @State private var showingPrep = false
     @State private var showingBattle = false
 
     var body: some View {
@@ -30,8 +31,8 @@ struct RootView: View {
                         .foregroundStyle(.secondary)
                 }
                 MapColumnView(nodes: run.nodes) { node in
-                    run.prepareEncounter(for: node)
-                    showingBattle = true
+                    run.startPrep(for: node)
+                    showingPrep = true
                 }
                 if let outcome = run.lastOutcome {
                     Text(outcomeText(outcome))
@@ -43,6 +44,16 @@ struct RootView: View {
             }
             .padding()
             .navigationTitle("Run Overview")
+            .sheet(isPresented: $showingPrep, onDismiss: {
+                if run.prepState != nil {
+                    run.cancelPrep()
+                }
+            }) {
+                PrepView { _ in
+                    showingBattle = true
+                }
+                .environmentObject(run)
+            }
             .sheet(isPresented: $showingBattle, onDismiss: {
                 run.resolvePendingEncounter()
             }) {

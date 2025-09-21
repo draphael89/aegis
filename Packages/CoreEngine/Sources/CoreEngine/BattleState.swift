@@ -58,11 +58,15 @@ public struct BattleState {
     public var playerPyre: Pyre
     public var enemyPyre: Pyre
     public var energyRemaining: Int
+    public var spellsHand: [String]
+    public var castsRemaining: Int
 
     public init(setup: BattleSetup) {
         self.playerPyre = setup.playerPyre
         self.enemyPyre = setup.enemyPyre
         self.energyRemaining = setup.energy
+        self.spellsHand = []
+        self.castsRemaining = 2
     }
 
     mutating func advanceTick() {
@@ -103,9 +107,11 @@ public struct BattleState {
 
 public struct ContentDatabase: Sendable {
     public var units: [String: UnitArchetype]
+    public var spells: [String: SpellArchetype]
 
-    public init(units: [UnitArchetype]) {
+    public init(units: [UnitArchetype], spells: [SpellArchetype] = []) {
         self.units = Dictionary(uniqueKeysWithValues: units.map { ($0.key, $0) })
+        self.spells = Dictionary(uniqueKeysWithValues: spells.map { ($0.key, $0) })
     }
 
     public func archetype(for key: String) throws -> UnitArchetype {
@@ -114,9 +120,17 @@ public struct ContentDatabase: Sendable {
         }
         return archetype
     }
+
+    public func spell(for key: String) throws -> SpellArchetype {
+        guard let spell = spells[key] else {
+            throw CoreEngineError.missingSpell(key)
+        }
+        return spell
+    }
 }
 
 public enum CoreEngineError: Error {
     case missingArchetype(String)
+    case missingSpell(String)
     case invalidPlacementSlot(Int)
 }

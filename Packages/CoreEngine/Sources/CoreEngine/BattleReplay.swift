@@ -50,6 +50,7 @@ public struct BattleReplay: Codable {
             seed: seed,
             config: config
         )
+        simulation.registerReplayActions(actions)
         return simulation
     }
 }

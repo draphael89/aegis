@@ -70,6 +70,29 @@ public enum StatusEffect: Equatable, Sendable {
     case slow(percent: Int, expiresAtTick: Int)
 }
 
+public enum SpellEffect: Equatable, Sendable {
+    case heal(amount: Int, radius: Int?)
+    case fireball(damage: Int, radius: Int)
+    case rally(attackSpeedPercent: Int, durationTicks: Int)
+}
+
+public struct SpellArchetype: Equatable, Sendable {
+    public let key: String
+    public let cost: Int
+    public let effect: SpellEffect
+
+    public init(key: String, cost: Int, effect: SpellEffect) {
+        self.key = key
+        self.cost = cost
+        self.effect = effect
+    }
+}
+
+public enum SpellTarget: Equatable, Sendable {
+    case unit(UnitID)
+    case lanePoint(lane: Lane, xTile: Int)
+}
+
 public struct UnitID: Hashable, Codable, Sendable {
     public let rawValue: UUID
 

@@ -120,6 +120,22 @@ public struct ContentCatalog: Sendable {
     }
 
     public func makeContentDatabase() -> ContentDatabase {
-        ContentDatabase(units: units)
+        let spellArchetypes = spells.map { spell in
+            SpellArchetype(key: spell.id, cost: spell.cost, effect: spell.effect.toCoreEffect())
+        }
+        return ContentDatabase(units: units, spells: spellArchetypes)
+    }
+}
+
+private extension SpellDefinition.Effect {
+    func toCoreEffect() -> SpellEffect {
+        switch self {
+        case let .heal(amount, radius):
+            return .heal(amount: amount, radius: radius)
+        case let .fireball(damage, radius):
+            return .fireball(damage: damage, radius: radius)
+        case let .rally(percent, duration):
+            return .rally(attackSpeedPercent: percent, durationTicks: duration)
+        }
     }
 }

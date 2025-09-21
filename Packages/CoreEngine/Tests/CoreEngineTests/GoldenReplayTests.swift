@@ -46,7 +46,11 @@ private enum GoldenFixtures {
                 cost: 3
             )
         ]
-        return ContentDatabase(units: units)
+        let spells: [SpellArchetype] = [
+            SpellArchetype(key: "heal", cost: 2, effect: .heal(amount: 25, radius: nil)),
+            SpellArchetype(key: "fireball", cost: 3, effect: .fireball(damage: 60, radius: 1))
+        ]
+        return ContentDatabase(units: units, spells: spells)
     }
 }
 
@@ -83,5 +87,13 @@ func goldenReplayBaseline() throws {
     #expect(replay.seed == reference.seed)
     #expect(replay.setup == reference.setup)
     let hash = try replay.hashOutcome(content: content)
-    #expect(hash == 0x5C828E64467AC6E0)
+    #expect(hash == 0x1C5B440A208FC1C8)
+}
+
+@Test("Golden replay – baseline encounter with spell casts")
+func goldenReplayBaselineWithCasts() throws {
+    let replay = try GoldenFixtures.loadReplay(named: "baseline_casts")
+    let content = GoldenFixtures.baselineContent()
+    let hash = try replay.hashOutcome(content: content)
+    #expect(hash == 0xD4F37D7C15DEC9D8)
 }

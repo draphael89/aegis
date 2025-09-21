@@ -8,6 +8,7 @@ public final class BattleSimulation {
     private let fieldLength: Int
     private var rng: RNG
     private var pendingAttacks: [(attacker: UnitID, defender: UnitID, damage: Int)] = []
+    private var replayActions: [Int: [BattleReplay.Action]] = [:]
 
     public init(setup: BattleSetup, content: ContentDatabase, seed: UInt64, config: BattleConfig = BattleConfig()) throws {
         self.state = BattleState(setup: setup)
@@ -17,6 +18,7 @@ public final class BattleSimulation {
         self.rng = RNG(seed: seed)
         try bootstrap(placements: setup.playerPlacements, team: .player)
         try bootstrap(placements: setup.enemyPlacements, team: .enemy)
+        state.spellsHand = content.spells.keys.sorted()
     }
 
     // MARK: - Public API
@@ -49,10 +51,27 @@ public final class BattleSimulation {
         return hash
     }
 
+    @discardableResult
+    public func cast(spellID: String, target: SpellTarget) -> Bool {
+        guard state.outcome == .inProgress else { return false }
+        guard state.castsRemaining > 0 else { return false }
+        guard state.spellsHand.contains(spellID) else { return false }
+        guard let spell = content.spells[spellID] else { return false }
+        guard state.energyRemaining >= spell.cost else { return false }
+
+        let applied = apply(spell: spell, target: target, casterTeam: .player)
+        guard applied else { return false }
+
+        state.energyRemaining -= spell.cost
+        state.castsRemaining -= 1
+        return true
+    }
+
     // MARK: - Tick Loop
 
     public func step() {
         guard state.outcome == .inProgress else { return }
+        applyReplayActionsIfNeeded()
         processStatuses()
         updateCooldowns()
         acquireTargetsAndMove()
@@ -144,7 +163,6 @@ public final class BattleSimulation {
     // MARK: - Movement & Targeting
 
     private func acquireTargetsAndMove() {
-        var updatedUnits: [UnitID: UnitInstance] = state.units
         pendingAttacks.removeAll(keepingCapacity: true)
 
         for unitID in state.orderedUnitIDs {
@@ -152,9 +170,11 @@ public final class BattleSimulation {
             guard let archetype = content.units[unit.archetypeKey] else { continue }
 
             if archetype.role == .healer {
-                healerAction(for: unitID, unit: unit, archetype: archetype, updatedUnits: &updatedUnits)
+                healerAction(for: unitID, archetype: archetype)
                 continue
             }
+
+            var unitMutated = false
 
             if let targetID = selectTarget(for: unit) {
                 guard let target = state.units[targetID], target.hp > 0 else { continue }
@@ -164,25 +184,33 @@ public final class BattleSimulation {
                 } else if canMove(unit: unit, archetype: archetype) {
                     unit.xTile += stepDirection(for: unit)
                     unit = clamp(unit: unit)
+                    unitMutated = true
                 }
             } else if canMove(unit: unit, archetype: archetype) {
                 unit.xTile += stepDirection(for: unit)
                 unit = clamp(unit: unit)
+                unitMutated = true
             }
-            updatedUnits[unitID] = unit
-        }
 
-        state.units = updatedUnits
+            if unitMutated {
+                state.units[unitID] = unit
+            }
+        }
     }
 
     private func selectTarget(for unit: UnitInstance) -> UnitID? {
-        let enemies = state.units.values.filter { $0.team != unit.team && $0.hp > 0 }
-        guard !enemies.isEmpty else { return nil }
+        var bestID: UnitID?
+        var bestPriority: (Int, Int, String)?
 
-        let sorted = enemies.sorted { lhs, rhs in
-            targetPriority(of: lhs, relativeTo: unit) < targetPriority(of: rhs, relativeTo: unit)
+        for candidate in state.units.values where candidate.team != unit.team && candidate.hp > 0 {
+            let priority = targetPriority(of: candidate, relativeTo: unit)
+            if bestPriority == nil || priority < bestPriority! {
+                bestPriority = priority
+                bestID = candidate.id
+            }
         }
-        return sorted.first?.id
+
+        return bestID
     }
 
     private func targetPriority(of enemy: UnitInstance, relativeTo unit: UnitInstance) -> (Int, Int, String) {
@@ -211,21 +239,27 @@ public final class BattleSimulation {
 
         let damage = modifiedDamage(for: attackerInstance, base: archetype.attack)
         pendingAttacks.append((attacker: attacker, defender: targetID, damage: damage))
-        attackerInstance.attackCooldown = max(1, archetype.attackIntervalTicks)
+        attackerInstance.attackCooldown = attackInterval(for: attackerInstance, base: archetype.attackIntervalTicks)
         state.units[attacker] = attackerInstance
     }
 
     private func modifiedDamage(for unit: UnitInstance, base: Int) -> Int {
-        var result = base
+        base
+    }
+
+    private func attackInterval(for unit: UnitInstance, base: Int) -> Int {
+        var interval = base
         for status in unit.statuses {
             switch status {
             case let .rally(_, boost):
-                result += (result * boost) / 100
+                interval = max(1, interval * max(0, 100 - boost) / 100)
+            case let .slow(percent, _):
+                interval = max(1, interval * (100 + percent) / 100)
             default:
                 continue
             }
         }
-        return max(0, result)
+        return max(1, interval)
     }
 
     private func stepDirection(for unit: UnitInstance) -> Int {
@@ -346,13 +380,24 @@ public final class BattleSimulation {
     }
 
     private func frontUnit(for team: Team) -> UnitInstance? {
-        let comparison: (UnitInstance, UnitInstance) -> Bool = team == .player
-            ? { lhs, rhs in lhs.xTile < rhs.xTile }
-            : { lhs, rhs in lhs.xTile > rhs.xTile }
-        return state.units.values
-            .filter { $0.team == team && $0.hp > 0 }
-            .sorted(by: comparison)
-            .first
+        var best: UnitInstance?
+
+        for candidate in state.units.values where candidate.team == team && candidate.hp > 0 {
+            guard let currentBest = best else {
+                best = candidate
+                continue
+            }
+
+            let shouldReplace = team == .player
+                ? candidate.xTile < currentBest.xTile
+                : candidate.xTile > currentBest.xTile
+
+            if shouldReplace {
+                best = candidate
+            }
+        }
+
+        return best
     }
 
     private func checkVictoryConditions() {
@@ -364,6 +409,152 @@ public final class BattleSimulation {
         if state.enemyPyre.hp <= 0 {
             state.outcome = .victory
         }
+    }
+}
+
+// MARK: - Spells & Replay Actions
+
+extension BattleSimulation {
+    func registerReplayActions(_ actions: [BattleReplay.Action]) {
+        replayActions = Dictionary(grouping: actions, by: { $0.tick })
+    }
+}
+
+private extension BattleSimulation {
+    func applyReplayActionsIfNeeded() {
+        guard let actions = replayActions[state.tick] else { return }
+        defer { replayActions[state.tick] = nil }
+
+        for action in actions {
+            switch action.kind {
+            case .cast:
+                guard content.spells[action.identifier] != nil else { continue }
+                let target: SpellTarget
+                if let lane = action.lane, let x = action.xTile {
+                    target = .lanePoint(lane: lane, xTile: x)
+                } else if let anchor = defaultAnchor(for: action.identifier) {
+                    target = anchor
+                } else {
+                    continue
+                }
+                _ = cast(spellID: action.identifier, target: target)
+            }
+        }
+    }
+
+    func defaultAnchor(for spellID: String) -> SpellTarget? {
+        // Fallback for replays missing explicit lane/x. Use mid lane at player front.
+        guard content.spells[spellID] != nil else { return nil }
+        return .lanePoint(lane: .mid, xTile: 0)
+    }
+
+    func apply(spell: SpellArchetype, target: SpellTarget, casterTeam: Team) -> Bool {
+        switch spell.effect {
+        case let .heal(amount, radius):
+            return applyHeal(amount: amount, radius: radius, target: target, team: casterTeam)
+        case let .fireball(damage, radius):
+            return applyFireball(damage: damage, radius: radius, target: target, casterTeam: casterTeam)
+        case let .rally(percent, duration):
+            return applyRally(percent: percent, duration: duration, target: target, team: casterTeam)
+        }
+    }
+
+    func applyHeal(amount: Int, radius: Int?, target: SpellTarget, team: Team) -> Bool {
+        guard let anchor = targetAnchor(for: target) else { return false }
+        let maxDistance = radius ?? 0
+        let allies = state.units.values.filter {
+            $0.team == team && $0.hp > 0 && abs($0.xTile - anchor.xTile) <= maxDistance && abs(Int($0.lane.index) - Int(anchor.lane.index)) <= 0
+        }
+
+        let wounded = allies.compactMap { unit -> UnitInstance? in
+            guard let maxHP = maxHP(for: unit), unit.hp < maxHP else { return nil }
+            return unit
+        }
+
+        guard !wounded.isEmpty else { return false }
+
+        let sorted = wounded.sorted { healPriority(for: $0, anchor: anchor) < healPriority(for: $1, anchor: anchor) }
+
+        if radius == nil {
+            guard var best = sorted.first, let maxHP = maxHP(for: best) else { return false }
+            best.hp = min(maxHP, best.hp + amount)
+            state.units[best.id] = best
+            return true
+        }
+
+        var applied = false
+        for var ally in sorted {
+            guard let maxHP = maxHP(for: ally) else { continue }
+            if ally.hp < maxHP {
+                ally.hp = min(maxHP, ally.hp + amount)
+                state.units[ally.id] = ally
+                applied = true
+            }
+        }
+
+        return applied
+    }
+
+    func applyFireball(damage: Int, radius: Int, target: SpellTarget, casterTeam: Team) -> Bool {
+        guard let anchor = targetAnchor(for: target) else { return false }
+        let enemyTeam = opposingTeam(for: casterTeam)
+        let enemies = state.units.values.filter {
+            $0.team == enemyTeam && $0.hp > 0 && $0.lane == anchor.lane && abs($0.xTile - anchor.xTile) <= radius
+        }
+
+        guard !enemies.isEmpty else { return false }
+
+        let sorted = enemies.sorted { fireballPriority(for: $0, anchor: anchor) < fireballPriority(for: $1, anchor: anchor) }
+
+        for var enemy in sorted {
+            enemy.hp -= damage
+            state.units[enemy.id] = enemy
+            if enemy.hp <= 0 {
+                handleDeath(of: enemy)
+            }
+        }
+
+        return true
+    }
+
+    func applyRally(percent: Int, duration: Int, target: SpellTarget, team: Team) -> Bool {
+        guard let anchor = targetAnchor(for: target) else { return false }
+        let allies = state.units.values.filter {
+            $0.team == team && $0.hp > 0 && $0.lane == anchor.lane && abs($0.xTile - anchor.xTile) <= 0
+        }
+
+        guard !allies.isEmpty else { return false }
+
+        let expires = state.tick + duration
+        var applied = false
+        let sorted = allies.sorted { healPriority(for: $0, anchor: anchor) < healPriority(for: $1, anchor: anchor) }
+        for var ally in sorted {
+            ally.statuses.append(.rally(expiresAtTick: expires, attackSpeedModifierPct: percent))
+            state.units[ally.id] = ally
+            applied = true
+        }
+        return applied
+    }
+
+    func targetAnchor(for target: SpellTarget) -> (lane: Lane, xTile: Int)? {
+        switch target {
+        case let .unit(id):
+            guard let unit = state.units[id] else { return nil }
+            return (unit.lane, unit.xTile)
+        case let .lanePoint(lane, xTile):
+            return (lane, xTile)
+        }
+    }
+
+    func healPriority(for unit: UnitInstance, anchor: (lane: Lane, xTile: Int)) -> (Int, Int, String) {
+        let lanePenalty = abs(Int(unit.lane.index) - Int(anchor.lane.index))
+        let distance = abs(unit.xTile - anchor.xTile)
+        return (lanePenalty, distance, unit.id.rawValue.uuidString)
+    }
+
+    func fireballPriority(for unit: UnitInstance, anchor: (lane: Lane, xTile: Int)) -> (Int, Int, String) {
+        let distance = abs(unit.xTile - anchor.xTile)
+        return (distance, unit.slot, unit.id.rawValue.uuidString)
     }
 }
 
@@ -380,10 +571,10 @@ private extension BattleSimulation {
 // MARK: - Healer support
 
 private extension BattleSimulation {
-    func healerAction(for unitID: UnitID, unit: UnitInstance, archetype: UnitArchetype, updatedUnits: inout [UnitID: UnitInstance]) {
-        var healer = unit
+    func healerAction(for unitID: UnitID, archetype: UnitArchetype) {
+        guard var healer = state.units[unitID] else { return }
 
-        if let targetID = selectHealTarget(for: unit, range: archetype.rangeTiles),
+        if let targetID = selectHealTarget(for: healer, range: archetype.rangeTiles),
            var target = state.units[targetID],
            let maxHP = maxHP(for: target),
            target.hp < maxHP {
@@ -391,10 +582,9 @@ private extension BattleSimulation {
                 let amount = healAmount(for: archetype)
                 target.hp = min(maxHP, target.hp + amount)
                 state.units[targetID] = target
-                updatedUnits[targetID] = target
                 healer.attackCooldown = max(1, archetype.attackIntervalTicks)
             }
-            updatedUnits[unitID] = healer
+            state.units[unitID] = healer
             return
         }
 
@@ -402,23 +592,28 @@ private extension BattleSimulation {
             healer.xTile += stepDirection(for: healer)
             healer = clamp(unit: healer)
         }
-        updatedUnits[unitID] = healer
+
+        state.units[unitID] = healer
     }
 
     func selectHealTarget(for unit: UnitInstance, range: Int) -> UnitID? {
-        let alliesNeedingHelp = state.units.values.compactMap { ally -> (UnitInstance, (Int, Int, String))? in
+        var bestID: UnitID?
+        var bestPriority: (Int, Int, String)?
+
+        for ally in state.units.values {
             guard ally.team == unit.team, ally.id != unit.id, ally.hp > 0,
-                  let maxHP = maxHP(for: ally), ally.hp < maxHP else { return nil }
+                  let maxHP = maxHP(for: ally), ally.hp < maxHP else { continue }
             let distance = abs(unit.xTile - ally.xTile)
-            guard distance <= range else { return nil }
+            guard distance <= range else { continue }
             let lanePenalty = abs(Int(ally.lane.index) - Int(unit.lane.index))
-            return (ally, (lanePenalty, ally.hp, ally.id.rawValue.uuidString))
+            let priority = (lanePenalty, ally.hp, ally.id.rawValue.uuidString)
+            if bestPriority == nil || priority < bestPriority! {
+                bestPriority = priority
+                bestID = ally.id
+            }
         }
 
-        guard let best = alliesNeedingHelp.sorted(by: { $0.1 < $1.1 }).first else {
-            return nil
-        }
-        return best.0.id
+        return bestID
     }
 
     func maxHP(for unit: UnitInstance) -> Int? {
