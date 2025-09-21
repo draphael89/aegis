@@ -1,0 +1,33 @@
+name: Aegis
+options:
+  settingPresets: all
+  bundleIdPrefix: com.example.oly
+  localPackagesGroup: Packages
+
+configs:
+  Debug: debug
+  Release: release
+
+configFiles:
+  Debug: Configs/Debug.xcconfig
+  Release: Configs/Release.xcconfig
+
+packages:
+  CoreEngine:   { path: Packages/CoreEngine }
+  BattleRender: { path: Packages/BattleRender }
+  MetaKit:      { path: Packages/MetaKit }
+
+targets:
+ AegisApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources: [iOSApp]
+    dependencies:
+      - package: CoreEngine
+      - package: BattleRender
+      - package: MetaKit
+    settings:
+      base:
+        PRODUCT_NAME: Aegis
+        SWIFT_VERSION: 5.10
