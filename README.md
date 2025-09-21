@@ -16,9 +16,9 @@ open Aegis.xcodeproj
 ```
 
 ## Key Commands
-- `swift test --package-path Packages/CoreEngine` – deterministic engine tests.
+- `swift test --package-path Packages/CoreEngine` – deterministic engine tests (including golden replays).
+- `swift test --package-path Packages/CoreEngine --filter "Golden replay – baseline encounter"` – verify the baseline replay hash after updating fixtures.
 - `xcodebuild -scheme AegisApp -destination 'platform=iOS Simulator,name=iPhone 15' build` – CI-friendly build.
-- `swift run --package-path Packages/CoreEngine` – add golden replay harnesses here.
 
 ## Feature Highlights
 - SpriteKit battle scene ships with lane bands, intro camera sweep, spawn pops, and hit flashes while respecting the 60 Hz deterministic core.

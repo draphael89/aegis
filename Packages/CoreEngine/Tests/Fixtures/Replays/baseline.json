@@ -1,0 +1,75 @@
+{
+  "actions" : [
+
+  ],
+  "seed" : 11029837421286059893,
+  "setup" : {
+    "enemyPlacements" : [
+      {
+        "archetypeKey" : "spearman",
+        "isHero" : false,
+        "isVeteran" : false,
+        "lane" : 1,
+        "slot" : 0,
+        "stance" : 0
+      },
+      {
+        "archetypeKey" : "archer",
+        "isHero" : false,
+        "isVeteran" : false,
+        "lane" : 0,
+        "slot" : 1,
+        "stance" : 0
+      },
+      {
+        "archetypeKey" : "healer",
+        "isHero" : false,
+        "isVeteran" : false,
+        "lane" : 2,
+        "slot" : 2,
+        "stance" : 1
+      }
+    ],
+    "enemyPyre" : {
+      "attack" : 8,
+      "attackIntervalTicks" : 72,
+      "cooldown" : 72,
+      "hp" : 200,
+      "team" : 1
+    },
+    "energy" : 10,
+    "playerPlacements" : [
+      {
+        "archetypeKey" : "spearman",
+        "isHero" : true,
+        "isVeteran" : false,
+        "lane" : 1,
+        "slot" : 0,
+        "stance" : 0
+      },
+      {
+        "archetypeKey" : "archer",
+        "isHero" : false,
+        "isVeteran" : false,
+        "lane" : 0,
+        "slot" : 1,
+        "stance" : 2
+      },
+      {
+        "archetypeKey" : "healer",
+        "isHero" : false,
+        "isVeteran" : false,
+        "lane" : 2,
+        "slot" : 2,
+        "stance" : 1
+      }
+    ],
+    "playerPyre" : {
+      "attack" : 8,
+      "attackIntervalTicks" : 72,
+      "cooldown" : 72,
+      "hp" : 200,
+      "team" : 0
+    }
+  }
+}

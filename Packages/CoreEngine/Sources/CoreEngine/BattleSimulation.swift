@@ -38,16 +38,15 @@ public final class BattleSimulation {
     }
 
     public func battleHash() -> UInt64 {
-        var hasher = Hasher()
         let digest = state.digest()
-        hasher.combine(digest.tick)
-        hasher.combine(digest.outcome == .victory)
-        hasher.combine(digest.playerPyreHP)
-        hasher.combine(digest.enemyPyreHP)
-        hasher.combine(digest.playerUnits)
-        hasher.combine(digest.enemyUnits)
-        let value = hasher.finalize()
-        return UInt64(bitPattern: Int64(value))
+        var hash: UInt64 = 0
+        hash = SeedFactory.mix(hash &+ UInt64(digest.tick))
+        hash = SeedFactory.mix(hash ^ UInt64(bitPattern: Int64(rawOutcomeValue(digest.outcome))))
+        hash = SeedFactory.mix(hash &+ UInt64(bitPattern: Int64(digest.playerPyreHP)))
+        hash = SeedFactory.mix(hash ^ UInt64(bitPattern: Int64(digest.enemyPyreHP)))
+        hash = SeedFactory.mix(hash &+ UInt64(digest.playerUnits))
+        hash = SeedFactory.mix(hash ^ UInt64(digest.enemyUnits))
+        return hash
     }
 
     // MARK: - Tick Loop
@@ -364,6 +363,16 @@ public final class BattleSimulation {
         }
         if state.enemyPyre.hp <= 0 {
             state.outcome = .victory
+        }
+    }
+}
+
+private extension BattleSimulation {
+    func rawOutcomeValue(_ outcome: BattleOutcome) -> Int {
+        switch outcome {
+        case .inProgress: return 0
+        case .victory: return 1
+        case .defeat: return 2
         }
     }
 }

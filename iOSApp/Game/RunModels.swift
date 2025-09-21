@@ -41,8 +41,14 @@ final class RunViewModel: ObservableObject {
     @Published private(set) var activeEncounter: Encounter?
     @Published private(set) var lastOutcome: BattleOutcome?
 
-    init(catalog: ContentCatalog = ContentCatalogFactory.makeVerticalSliceCatalog()) {
+    private(set) var runSeed: UInt64
+
+    init(
+        catalog: ContentCatalog = ContentCatalogFactory.makeVerticalSliceCatalog(),
+        runSeed: UInt64 = SeedFactory.makeRunSeed()
+    ) {
         self.catalog = catalog
+        self.runSeed = runSeed
         self.nodes = [
             RunNode(kind: .battle),
             RunNode(kind: .battle, isLocked: true),
@@ -52,7 +58,16 @@ final class RunViewModel: ObservableObject {
 
     func prepareEncounter(for node: RunNode) {
         guard let index = nodes.firstIndex(of: node), !nodes[index].isCompleted else { return }
-        activeEncounter = Encounter(node: node, setup: Self.defaultSetup(catalog: catalog), seed: UInt64.random(in: 0...UInt64.max))
+        let seed = SeedFactory.encounterSeed(
+            runSeed: runSeed,
+            floor: index,
+            nodeID: node.id
+        )
+        activeEncounter = Encounter(
+            node: node,
+            setup: Self.defaultSetup(catalog: catalog),
+            seed: seed
+        )
         lastOutcome = nil
         var updated = nodes
         updated[index].isLocked = false

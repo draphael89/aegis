@@ -1,0 +1,36 @@
+{
+  "actions" : [
+
+  ],
+  "seed" : 8029524898966082496,
+  "setup" : {
+    "enemyPlacements" : [
+
+    ],
+    "enemyPyre" : {
+      "attack" : 0,
+      "attackIntervalTicks" : 120,
+      "cooldown" : 120,
+      "hp" : 40,
+      "team" : 1
+    },
+    "energy" : 10,
+    "playerPlacements" : [
+      {
+        "archetypeKey" : "spearman",
+        "isHero" : true,
+        "isVeteran" : false,
+        "lane" : 1,
+        "slot" : 0,
+        "stance" : 0
+      }
+    ],
+    "playerPyre" : {
+      "attack" : 8,
+      "attackIntervalTicks" : 72,
+      "cooldown" : 72,
+      "hp" : 200,
+      "team" : 0
+    }
+  }
+}
