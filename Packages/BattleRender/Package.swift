@@ -6,21 +6,26 @@ import PackageDescription
 let package = Package(
     name: "BattleRender",
     products: [
-        // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "BattleRender",
             targets: ["BattleRender"]
         ),
     ],
+    dependencies: [
+        .package(name: "CoreEngine", path: "../CoreEngine"),
+        .package(name: "MetaKit", path: "../MetaKit")
+    ],
     targets: [
-        // Targets are the basic building blocks of a package, defining a module or a test suite.
-        // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "BattleRender"
+            name: "BattleRender",
+            dependencies: [
+                .product(name: "CoreEngine", package: "CoreEngine"),
+                .product(name: "MetaKit", package: "MetaKit")
+            ]
         ),
         .testTarget(
             name: "BattleRenderTests",
-            dependencies: ["BattleRender"]
+            dependencies: ["BattleRender", .product(name: "MetaKit", package: "MetaKit")]
         ),
     ]
 )
