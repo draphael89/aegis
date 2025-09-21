@@ -152,6 +152,11 @@ public final class BattleSimulation {
             guard var unit = state.units[unitID], unit.hp > 0 else { continue }
             guard let archetype = content.units[unit.archetypeKey] else { continue }
 
+            if archetype.role == .healer {
+                healerAction(for: unitID, unit: unit, archetype: archetype, updatedUnits: &updatedUnits)
+                continue
+            }
+
             if let targetID = selectTarget(for: unit) {
                 guard let target = state.units[targetID], target.hp > 0 else { continue }
                 let distance = abs(unit.xTile - target.xTile)
@@ -161,11 +166,9 @@ public final class BattleSimulation {
                     unit.xTile += stepDirection(for: unit)
                     unit = clamp(unit: unit)
                 }
-            } else {
-                if canMove(unit: unit, archetype: archetype) {
-                    unit.xTile += stepDirection(for: unit)
-                    unit = clamp(unit: unit)
-                }
+            } else if canMove(unit: unit, archetype: archetype) {
+                unit.xTile += stepDirection(for: unit)
+                unit = clamp(unit: unit)
             }
             updatedUnits[unitID] = unit
         }
@@ -355,12 +358,65 @@ public final class BattleSimulation {
 
     private func checkVictoryConditions() {
         guard state.outcome == .inProgress else { return }
-        let playerAlive = state.units.values.contains { $0.team == .player && $0.hp > 0 }
-        let enemyAlive = state.units.values.contains { $0.team == .enemy && $0.hp > 0 }
-        if !playerAlive {
+        if state.playerPyre.hp <= 0 {
             state.outcome = .defeat
-        } else if !enemyAlive {
+            return
+        }
+        if state.enemyPyre.hp <= 0 {
             state.outcome = .victory
         }
+    }
+}
+
+// MARK: - Healer support
+
+private extension BattleSimulation {
+    func healerAction(for unitID: UnitID, unit: UnitInstance, archetype: UnitArchetype, updatedUnits: inout [UnitID: UnitInstance]) {
+        var healer = unit
+
+        if let targetID = selectHealTarget(for: unit, range: archetype.rangeTiles),
+           var target = state.units[targetID],
+           let maxHP = maxHP(for: target),
+           target.hp < maxHP {
+            if healer.attackCooldown == 0 {
+                let amount = healAmount(for: archetype)
+                target.hp = min(maxHP, target.hp + amount)
+                state.units[targetID] = target
+                updatedUnits[targetID] = target
+                healer.attackCooldown = max(1, archetype.attackIntervalTicks)
+            }
+            updatedUnits[unitID] = healer
+            return
+        }
+
+        if canMove(unit: healer, archetype: archetype) {
+            healer.xTile += stepDirection(for: healer)
+            healer = clamp(unit: healer)
+        }
+        updatedUnits[unitID] = healer
+    }
+
+    func selectHealTarget(for unit: UnitInstance, range: Int) -> UnitID? {
+        let alliesNeedingHelp = state.units.values.compactMap { ally -> (UnitInstance, (Int, Int, String))? in
+            guard ally.team == unit.team, ally.id != unit.id, ally.hp > 0,
+                  let maxHP = maxHP(for: ally), ally.hp < maxHP else { return nil }
+            let distance = abs(unit.xTile - ally.xTile)
+            guard distance <= range else { return nil }
+            let lanePenalty = abs(Int(ally.lane.index) - Int(unit.lane.index))
+            return (ally, (lanePenalty, ally.hp, ally.id.rawValue.uuidString))
+        }
+
+        guard let best = alliesNeedingHelp.sorted(by: { $0.1 < $1.1 }).first else {
+            return nil
+        }
+        return best.0.id
+    }
+
+    func maxHP(for unit: UnitInstance) -> Int? {
+        content.units[unit.archetypeKey]?.maxHP
+    }
+
+    func healAmount(for archetype: UnitArchetype) -> Int {
+        max(4, archetype.attackIntervalTicks / 8)
     }
 }
