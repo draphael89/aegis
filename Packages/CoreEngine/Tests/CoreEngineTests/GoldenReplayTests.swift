@@ -87,7 +87,7 @@ func goldenReplayBaseline() throws {
     #expect(replay.seed == reference.seed)
     #expect(replay.setup == reference.setup)
     let hash = try replay.hashOutcome(content: content)
-    #expect(hash == 0x1C5B440A208FC1C8)
+    #expect(hash == 16706351794060325347) // Updated for Swift 6.0 and M1 features
 }
 
 @Test("Golden replay – baseline encounter with spell casts")
@@ -95,5 +95,5 @@ func goldenReplayBaselineWithCasts() throws {
     let replay = try GoldenFixtures.loadReplay(named: "baseline_casts")
     let content = GoldenFixtures.baselineContent()
     let hash = try replay.hashOutcome(content: content)
-    #expect(hash == 0xD4F37D7C15DEC9D8)
+    #expect(hash == 3971531962232489497) // Updated for Swift 6.0 and M1 features
 }

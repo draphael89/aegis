@@ -116,6 +116,7 @@ public struct UnitInstance: Identifiable, Equatable, Sendable {
     public var statuses: [StatusEffect]
     public var isHero: Bool
     public var isVeteran: Bool
+    public var armor: Int = 0  // Damage reduction from artifacts
 
     public init(
         id: UnitID = UnitID(),
@@ -129,7 +130,8 @@ public struct UnitInstance: Identifiable, Equatable, Sendable {
         stance: Stance,
         statuses: [StatusEffect] = [],
         isHero: Bool,
-        isVeteran: Bool
+        isVeteran: Bool,
+        armor: Int = 0
     ) {
         self.id = id
         self.archetypeKey = archetypeKey
@@ -143,6 +145,7 @@ public struct UnitInstance: Identifiable, Equatable, Sendable {
         self.statuses = statuses
         self.isHero = isHero
         self.isVeteran = isVeteran
+        self.armor = armor
     }
 }
 

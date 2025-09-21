@@ -51,6 +51,49 @@ public final class BattleSimulation {
         return hash
     }
 
+    public func performSkirmishManeuver(lane1: Lane, lane2: Lane, slot: Int = 1) -> Bool {
+        // Only allow once per battle
+        guard !state.skirmishManeuverUsed else { return false }
+        
+        // Validate lanes are adjacent
+        guard abs(Int(lane1.index) - Int(lane2.index)) == 1 else { return false }
+        
+        // Validate slot is mid (1)
+        guard slot == 1 else { return false }
+        
+        // Find units to swap
+        var unit1: UnitInstance?
+        var unit1ID: UnitID?
+        var unit2: UnitInstance?
+        var unit2ID: UnitID?
+        
+        for unitID in state.orderedUnitIDs {
+            guard let unit = state.units[unitID], unit.hp > 0 else { continue }
+            if unit.team == .player && unit.lane == lane1 && unit.slot == slot {
+                unit1 = unit
+                unit1ID = unitID
+            } else if unit.team == .player && unit.lane == lane2 && unit.slot == slot {
+                unit2 = unit
+                unit2ID = unitID
+            }
+        }
+        
+        // Perform swap if both units exist
+        if let u1 = unit1, let u1ID = unit1ID,
+           let u2 = unit2, let u2ID = unit2ID {
+            var swapped1 = u1
+            var swapped2 = u2
+            swapped1.lane = lane2
+            swapped2.lane = lane1
+            state.units[u1ID] = swapped1
+            state.units[u2ID] = swapped2
+            state.skirmishManeuverUsed = true
+            return true
+        }
+        
+        return false
+    }
+    
     @discardableResult
     public func cast(spellID: String, target: SpellTarget) -> Bool {
         guard state.outcome == .inProgress else { return false }
@@ -90,6 +133,10 @@ public final class BattleSimulation {
             }
             let archetype = try content.archetype(for: placement.archetypeKey)
             let startTile = startTile(for: team, slot: placement.slot)
+            // Apply Phalanx Crest armor for front slot units
+            let artifacts = team == .player ? state.playerArtifacts : state.enemyArtifacts
+            let armor = (placement.slot == 0 && artifacts.contains("artifact.phalanxCrest")) ? 2 : 0
+            
             let unit = UnitInstance(
                 archetypeKey: archetype.key,
                 team: team,
@@ -100,7 +147,8 @@ public final class BattleSimulation {
                 attackCooldown: 0,
                 stance: placement.stance,
                 isHero: placement.isHero,
-                isVeteran: placement.isVeteran
+                isVeteran: placement.isVeteran,
+                armor: armor
             )
             state.insert(unit)
         }
@@ -138,6 +186,27 @@ public final class BattleSimulation {
                 continue
             }
             state.units[unitID] = unit
+        }
+        
+        // Apply Achilles hero aura: +10% attack speed to adjacent allies (same slot, neighboring lanes)
+        for unitID in state.orderedUnitIDs {
+            guard let heroUnit = state.units[unitID],
+                  heroUnit.hp > 0,
+                  heroUnit.archetypeKey == "hero.achilles" else { continue }
+            
+            // Find adjacent allies (same slot, neighboring lanes)
+            for allyID in state.orderedUnitIDs {
+                guard var ally = state.units[allyID],
+                      ally.hp > 0,
+                      ally.team == heroUnit.team,
+                      ally.id != heroUnit.id,
+                      ally.slot == heroUnit.slot,
+                      abs(Int(ally.lane.index) - Int(heroUnit.lane.index)) == 1 else { continue }
+                
+                // Apply rally effect for 1 tick (will be reapplied next tick)
+                ally.statuses.append(.rally(expiresAtTick: state.tick + 1, attackSpeedModifierPct: 10))
+                state.units[allyID] = ally
+            }
         }
     }
 
@@ -182,9 +251,13 @@ public final class BattleSimulation {
                 if distance <= archetype.rangeTiles {
                     attemptAttack(attacker: unitID, unit: unit, targetID: targetID, archetype: archetype)
                 } else if canMove(unit: unit, archetype: archetype) {
-                    unit.xTile += stepDirection(for: unit)
-                    unit = clamp(unit: unit)
-                    unitMutated = true
+                    // Ranged units hold position if target is within range
+                    let isRanged = archetype.rangeTiles > 1
+                    if !isRanged {
+                        unit.xTile += stepDirection(for: unit)
+                        unit = clamp(unit: unit)
+                        unitMutated = true
+                    }
                 }
             } else if canMove(unit: unit, archetype: archetype) {
                 unit.xTile += stepDirection(for: unit)
@@ -193,6 +266,8 @@ public final class BattleSimulation {
             }
 
             if unitMutated {
+                // Check for spike trap triggers when unit moves
+                checkTrapTrigger(for: &unit)
                 state.units[unitID] = unit
             }
         }
@@ -281,14 +356,54 @@ public final class BattleSimulation {
         return state.tick % moveInterval == 0
     }
 
+    private func checkTrapTrigger(for unit: inout UnitInstance) {
+        // Check if unit is entering enemy trap zone for the first time
+        let opposingTeam = unit.team == .player ? Team.enemy : Team.player
+        
+        // Check if trap has already been triggered for this lane
+        if state.trapTriggered[opposingTeam]?[unit.lane] == true { return }
+        
+        // Check if there's a trap in this lane (initialized in BattleState.init)
+        guard state.trapTriggered[opposingTeam]?[unit.lane] == false else { return }
+        
+        // Determine if unit has entered the trap zone (first third of enemy field)
+        let enteringZone: Bool
+        if unit.team == .player {
+            // Player units moving right, enemy traps trigger in right third
+            enteringZone = unit.xTile >= (fieldLength * 2 / 3)
+        } else {
+            // Enemy units moving left, player traps trigger in left third
+            enteringZone = unit.xTile <= (fieldLength / 3)
+        }
+        
+        if enteringZone {
+            // Apply spike damage
+            unit.hp = max(0, unit.hp - 6)
+            
+            // Mark trap as triggered
+            state.trapTriggered[opposingTeam]?[unit.lane] = true
+            
+            if unit.hp <= 0 {
+                handleDeath(of: unit)
+            }
+        }
+    }
+
     // MARK: - Damage Resolution
 
     private func resolvePendingAttacks() {
         guard !pendingAttacks.isEmpty else { return }
         for attack in pendingAttacks {
             guard var defender = state.units[attack.defender], defender.hp > 0 else { continue }
-            defender.hp -= attack.damage
+            
+            // Track attacker for Lyre of Apollo
+            state.lastAttacker[attack.defender] = attack.attacker
+            
+            // Apply armor reduction
+            let damageAfterArmor = max(0, attack.damage - defender.armor)
+            defender.hp -= damageAfterArmor
             state.units[attack.defender] = defender
+            
             if defender.hp <= 0 {
                 handleDeath(of: defender)
             }
@@ -297,6 +412,39 @@ public final class BattleSimulation {
     }
 
     private func handleDeath(of unit: UnitInstance) {
+        // Check for Lyre of Apollo on-kill heal
+        if let attackerID = state.lastAttacker[unit.id],
+           let attacker = state.units[attackerID] {
+            let artifacts = attacker.team == .player ? state.playerArtifacts : state.enemyArtifacts
+            if artifacts.contains("artifact.lyreOfApollo") {
+                // Find most wounded ally in the same lane as the attacker
+                var mostWoundedID: UnitID?
+                var lowestHPRatio: Double = 1.0
+                
+                for allyID in state.orderedUnitIDs {
+                    guard let ally = state.units[allyID],
+                          ally.team == attacker.team,
+                          ally.lane == attacker.lane,
+                          ally.hp > 0,
+                          let archetype = content.units[ally.archetypeKey] else { continue }
+                    
+                    let hpRatio = Double(ally.hp) / Double(archetype.maxHP)
+                    if hpRatio < lowestHPRatio {
+                        lowestHPRatio = hpRatio
+                        mostWoundedID = allyID
+                    }
+                }
+                
+                // Heal the most wounded ally by 5
+                if let targetID = mostWoundedID,
+                   var target = state.units[targetID],
+                   let archetype = content.units[target.archetypeKey] {
+                    target.hp = min(target.hp + 5, archetype.maxHP)
+                    state.units[targetID] = target
+                }
+            }
+        }
+        
         state.remove(unitID: unit.id)
         if unit.team == .player {
             if unit.isHero {
@@ -334,12 +482,19 @@ public final class BattleSimulation {
         }
         guard copy.cooldown == 0 else { return copy }
         if var target = frontUnit(for: targetTeam) {
-            target.hp -= copy.attack
-            state.units[target.id] = target
-            if target.hp <= 0 {
-                handleDeath(of: target)
+            // Pyre inner-third rule: only shoot if target is in the middle third of the field
+            let innerThirdStart = fieldLength / 3
+            let innerThirdEnd = fieldLength * 2 / 3
+            let targetInInnerThird = target.xTile >= innerThirdStart && target.xTile <= innerThirdEnd
+            
+            if targetInInnerThird {
+                target.hp -= copy.attack
+                state.units[target.id] = target
+                if target.hp <= 0 {
+                    handleDeath(of: target)
+                }
+                copy.cooldown = copy.attackIntervalTicks
             }
-            copy.cooldown = copy.attackIntervalTicks
         }
         return copy
     }
