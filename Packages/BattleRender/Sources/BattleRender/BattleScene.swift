@@ -12,7 +12,7 @@ public final class BattleScene: SKScene {
     public weak var battleDelegate: BattleSceneDelegate?
 
     private let configuration: BattleSceneConfiguration
-    private let placementGrid: PlacementGrid
+    private var placementGrid: PlacementGrid
     private var simulation: BattleSimulation?
     private var content: ContentCatalog?
     private var unitIndex: [String: UnitArchetype] = [:]
@@ -32,7 +32,7 @@ public final class BattleScene: SKScene {
 
     public init(configuration: BattleSceneConfiguration = BattleSceneConfiguration()) {
         self.configuration = configuration
-        self.placementGrid = PlacementGrid(configuration: configuration, fieldLength: 30)
+        self.placementGrid = PlacementGrid(configuration: configuration, fieldLength: configuration.fieldLengthTiles)
         self.fixedDelta = 1.0 / 60.0
         self.unitPool = NodePool<UnitNode>(factory: {
             UnitNode(size: CGSize(width: 32, height: 32))
@@ -78,6 +78,7 @@ public final class BattleScene: SKScene {
         addChild(cameraNode)
         cameraNode.addChild(energyLabel)
         for node in laneBandNodes {
+            node.isAntialiased = false
             addChild(node)
         }
     }

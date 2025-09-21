@@ -7,17 +7,20 @@ public struct BattleSceneConfiguration: Sendable {
     public let laneWidth: CGFloat
     public let friendlyOrigin: CGPoint
     public let tileHeight: CGFloat
+    public let fieldLengthTiles: Int
 
     public init(
         canvasSize: CGSize = CGSize(width: 360, height: 640),
         laneWidth: CGFloat = 96,
         friendlyOrigin: CGPoint = CGPoint(x: 72, y: 96),
-        tileHeight: CGFloat = 36
+        tileHeight: CGFloat = 36,
+        fieldLengthTiles: Int = 30
     ) {
         self.canvasSize = canvasSize
         self.laneWidth = laneWidth
         self.friendlyOrigin = friendlyOrigin
         self.tileHeight = tileHeight
+        self.fieldLengthTiles = fieldLengthTiles
     }
 }
 

@@ -34,10 +34,15 @@ struct BattleContainerView: View {
     @State private var hasPresentedBattle = false
 
     var body: some View {
-        SpriteView(scene: scene, options: [.ignoresSiblingOrder])
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
-            .background(Color.black)
+        GeometryReader { proxy in
+            let scaling = PixelScaler.scaledContentSize(for: proxy.size)
+            ZStack {
+                Color.black.ignoresSafeArea()
+                SpriteView(scene: scene, options: [.ignoresSiblingOrder])
+                    .frame(width: scaling.contentSize.width, height: scaling.contentSize.height)
+                    .clipped()
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .center)
             .onAppear {
                 coordinator.runViewModel = run
                 Haptics.light()
@@ -46,6 +51,7 @@ struct BattleContainerView: View {
             .onReceive(coordinator.$outcome.compactMap { $0 }) { _ in
                 dismiss()
             }
+        }
     }
 
     @MainActor
