@@ -3,6 +3,7 @@ import Foundation
 import MetaKit
 import SpriteKit
 
+@MainActor
 public protocol BattleSceneDelegate: AnyObject {
     func battleScene(_ scene: BattleScene, didFinish outcome: BattleOutcome)
 }
