@@ -30,4 +30,5 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Aegis
-        SWIFT_VERSION: 5.10
+        SWIFT_VERSION: 6.0
+        SWIFT_STRICT_CONCURRENCY: complete

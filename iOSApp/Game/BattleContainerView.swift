@@ -38,7 +38,7 @@ struct BattleContainerView: View {
             let scaling = PixelScaler.scaledContentSize(for: proxy.size)
             ZStack {
                 Color.black.ignoresSafeArea()
-                SpriteView(scene: scene, options: [.ignoresSiblingOrder])
+                SpriteView(scene: scene, preferredFramesPerSecond: 60, options: [.ignoresSiblingOrder])
                     .frame(width: scaling.contentSize.width, height: scaling.contentSize.height)
                     .clipped()
             }

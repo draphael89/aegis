@@ -32,7 +32,7 @@ public final class BattleScene: SKScene {
     private let energyLabel = SKLabelNode(fontNamed: "Menlo")
     private let cameraNode = SKCameraNode()
     private var introSweepCompleted = false
-    private var cameraRestPosition: CGPoint
+    private var cameraRestPosition: CGPoint = .zero
     private var hitstopTimer: TimeInterval = 0
     private var shakeTimer: TimeInterval = 0
     private var shakeDuration: TimeInterval = 0
@@ -68,7 +68,6 @@ public final class BattleScene: SKScene {
             label.horizontalAlignmentMode = .center
             label.verticalAlignmentMode = .center
             label.zPosition = 70
-            label.isAntialiased = false
             return label
         }, reset: { label in
             label.removeAllActions()
@@ -335,7 +334,7 @@ public final class BattleScene: SKScene {
             let damped = progress * progress
             let offsetX = (CGFloat.random(in: -1...1)) * shakeAmplitude * damped
             let offsetY = (CGFloat.random(in: -1...1)) * shakeAmplitude * damped
-            cameraNode.position = cameraRestPosition + CGPoint(x: offsetX, y: offsetY)
+            cameraNode.position = CGPoint(x: cameraRestPosition.x + offsetX, y: cameraRestPosition.y + offsetY)
         } else {
             cameraNode.position = cameraRestPosition
             shakeAmplitude = 0

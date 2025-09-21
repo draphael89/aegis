@@ -28,25 +28,37 @@ public struct UnitPlacement: Equatable, Codable, Sendable {
     }
 }
 
-public struct BattleSetup: Codable, Equatable, Sendable {
+public struct BattleSetup: Equatable, Sendable {
     public var playerPlacements: [UnitPlacement]
     public var enemyPlacements: [UnitPlacement]
     public var playerPyre: Pyre
     public var enemyPyre: Pyre
     public var energy: Int
+    public var playerArtifacts: [String] = []
+    public var enemyArtifacts: [String] = []
+    public var playerTraps: [Lane: String] = [:]
+    public var enemyTraps: [Lane: String] = [:]
 
     public init(
         playerPlacements: [UnitPlacement],
         enemyPlacements: [UnitPlacement],
         playerPyre: Pyre,
         enemyPyre: Pyre,
-        energy: Int
+        energy: Int,
+        playerArtifacts: [String] = [],
+        enemyArtifacts: [String] = [],
+        playerTraps: [Lane: String] = [:],
+        enemyTraps: [Lane: String] = [:]
     ) {
         self.playerPlacements = playerPlacements
         self.enemyPlacements = enemyPlacements
         self.playerPyre = playerPyre
         self.enemyPyre = enemyPyre
         self.energy = energy
+        self.playerArtifacts = playerArtifacts
+        self.enemyArtifacts = enemyArtifacts
+        self.playerTraps = playerTraps
+        self.enemyTraps = enemyTraps
     }
 }
 
@@ -60,6 +72,11 @@ public struct BattleState {
     public var energyRemaining: Int
     public var spellsHand: [String]
     public var castsRemaining: Int
+    public var playerArtifacts: [String] = []
+    public var enemyArtifacts: [String] = []
+    public var trapTriggered: [Team: [Lane: Bool]] = [.player: [:], .enemy: [:]]
+    public var lastAttacker: [UnitID: UnitID] = [:]  // For Lyre of Apollo
+    public var skirmishManeuverUsed: Bool = false
 
     public init(setup: BattleSetup) {
         self.playerPyre = setup.playerPyre
@@ -67,6 +84,17 @@ public struct BattleState {
         self.energyRemaining = setup.energy
         self.spellsHand = []
         self.castsRemaining = 2
+        self.playerArtifacts = setup.playerArtifacts
+        self.enemyArtifacts = setup.enemyArtifacts
+        // Initialize trap tracking - traps are not triggered yet
+        for lane in Lane.allCases {
+            if setup.playerTraps[lane] != nil {
+                self.trapTriggered[.player]?[lane] = false
+            }
+            if setup.enemyTraps[lane] != nil {
+                self.trapTriggered[.enemy]?[lane] = false
+            }
+        }
     }
 
     mutating func advanceTick() {
@@ -133,4 +161,40 @@ public enum CoreEngineError: Error {
     case missingArchetype(String)
     case missingSpell(String)
     case invalidPlacementSlot(Int)
+}
+
+// MARK: - Codable
+extension BattleSetup: Codable {
+    enum CodingKeys: String, CodingKey {
+        case playerPlacements, enemyPlacements, playerPyre, enemyPyre, energy
+        case playerArtifacts, enemyArtifacts, playerTraps, enemyTraps
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.playerPlacements = try container.decode([UnitPlacement].self, forKey: .playerPlacements)
+        self.enemyPlacements = try container.decode([UnitPlacement].self, forKey: .enemyPlacements)
+        self.playerPyre = try container.decode(Pyre.self, forKey: .playerPyre)
+        self.enemyPyre = try container.decode(Pyre.self, forKey: .enemyPyre)
+        self.energy = try container.decode(Int.self, forKey: .energy)
+        
+        // New fields with defaults for backward compatibility
+        self.playerArtifacts = try container.decodeIfPresent([String].self, forKey: .playerArtifacts) ?? []
+        self.enemyArtifacts = try container.decodeIfPresent([String].self, forKey: .enemyArtifacts) ?? []
+        self.playerTraps = try container.decodeIfPresent([Lane: String].self, forKey: .playerTraps) ?? [:]
+        self.enemyTraps = try container.decodeIfPresent([Lane: String].self, forKey: .enemyTraps) ?? [:]
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(playerPlacements, forKey: .playerPlacements)
+        try container.encode(enemyPlacements, forKey: .enemyPlacements)
+        try container.encode(playerPyre, forKey: .playerPyre)
+        try container.encode(enemyPyre, forKey: .enemyPyre)
+        try container.encode(energy, forKey: .energy)
+        try container.encode(playerArtifacts, forKey: .playerArtifacts)
+        try container.encode(enemyArtifacts, forKey: .enemyArtifacts)
+        try container.encode(playerTraps, forKey: .playerTraps)
+        try container.encode(enemyTraps, forKey: .enemyTraps)
+    }
 }
