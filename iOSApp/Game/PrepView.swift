@@ -88,7 +88,7 @@ struct PrepView: View {
     private func slotButton(slot: PrepSlot, prep: PrepState) -> some View {
         let placement = prep.placement(for: slot)
         return Button {
-            if let selected = prep.selectedCard {
+            if prep.selectedCard != nil {
                 run.placeSelectedCard(at: slot)
             } else {
                 run.cycleStance(at: slot)

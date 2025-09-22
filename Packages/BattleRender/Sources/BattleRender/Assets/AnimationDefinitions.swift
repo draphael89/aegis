@@ -1,7 +1,7 @@
 import Foundation
 import SpriteKit
 
-public struct AnimationDefinition {
+public struct AnimationDefinition: Sendable {
     public let name: String
     public let frames: Int
     public let duration: TimeInterval

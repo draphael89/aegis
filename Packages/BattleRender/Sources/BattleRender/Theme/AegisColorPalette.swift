@@ -1,6 +1,6 @@
+import CoreEngine
 import Foundation
 import SpriteKit
-import SwiftUI
 
 public struct AegisColorPalette {
     
@@ -92,6 +92,9 @@ extension SKColor {
 }
 
 #if canImport(SwiftUI)
+import SwiftUI
+
+@available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
 extension Color {
     public static let aegisMidnightIndigo = Color(SKColor(hex: 0x1B1D40))
     public static let aegisNightBlue = Color(SKColor(hex: 0x263572))

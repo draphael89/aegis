@@ -18,7 +18,7 @@ public final class PixelUnitNode: SKNode {
     
     private let baseSize = CGSize(width: 32, height: 32)
     
-    public init() {
+    public override init() {
         self.spriteNode = SKSpriteNode(color: .clear, size: baseSize)
         self.healthBar = HealthBarNode()
         self.shadowNode = SKShapeNode(ellipseOf: CGSize(width: 20, height: 8))

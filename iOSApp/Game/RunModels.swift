@@ -160,7 +160,7 @@ final class RunViewModel: ObservableObject {
     }
 
     func commitPrep() -> Encounter? {
-        guard var state = prepState, state.hasHeroPlaced else { return nil }
+        guard let state = prepState, state.hasHeroPlaced else { return nil }
         let (enemyPlacements, playerPyre, enemyPyre) = Self.baseBattleComponents()
         let playerPlacements = state.playerPlacements
         guard !playerPlacements.isEmpty else { return nil }

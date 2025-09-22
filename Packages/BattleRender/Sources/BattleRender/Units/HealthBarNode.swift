@@ -13,7 +13,7 @@ public final class HealthBarNode: SKNode {
     private let barHeight: CGFloat = 4
     private var currentHealthRatio: CGFloat = 1.0
     
-    public init() {
+    public override init() {
         self.backgroundBar = SKShapeNode(rectOf: CGSize(width: barWidth, height: barHeight), cornerRadius: 1)
         self.healthFill = SKShapeNode(rectOf: CGSize(width: barWidth, height: barHeight), cornerRadius: 1)
         self.frameNode = SKSpriteNode(color: .clear, size: CGSize(width: barWidth + 4, height: barHeight + 4))
@@ -58,9 +58,9 @@ public final class HealthBarNode: SKNode {
         updateHealth(current: current, max: max)
     }
     
-    public func updateHealth(current: Int, max: Int) {
-        let clamped = max(0, min(max, current))
-        currentHealthRatio = max == 0 ? 0 : CGFloat(clamped) / CGFloat(max)
+    public func updateHealth(current: Int, max maxValue: Int) {
+        let clamped = Swift.max(0, Swift.min(maxValue, current))
+        currentHealthRatio = maxValue == 0 ? 0 : CGFloat(clamped) / CGFloat(maxValue)
         
         let fillWidth = currentHealthRatio * barWidth
         let fillRect = CGRect(x: -barWidth / 2, y: -barHeight / 2, width: fillWidth, height: barHeight)

@@ -26,6 +26,7 @@ public final class AssetCatalog {
         }
     }
     
+    @available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
     public func preloadAssets() async {
         let atlasNames = [
             "unit_achilles",
@@ -56,6 +57,7 @@ public final class AssetCatalog {
     }
     
     @MainActor
+    @available(iOS 13.0, macOS 10.15, tvOS 13.0, watchOS 6.0, *)
     private func loadAtlas(named name: String) async {
         let atlas = SKTextureAtlas(named: name)
         atlasCache[name] = atlas
